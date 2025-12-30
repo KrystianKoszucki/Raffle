@@ -1,4 +1,5 @@
 ﻿using Raffle.Api.Contracts;
+using Raffle.Api.Exceptions;
 using Raffle.Api.Models;
 using System.Security.Cryptography;
 
@@ -23,15 +24,15 @@ namespace Raffle.Api.Services
             _database = database;
         }
 
-        public async Task CreateRaffle(string name)
+        public async Task CreateRaffle(string raffleDrawName)
         {
-            var raffleDraw = await _database.RaffleDrawByName(name) ;
+            var raffleDraw = await _database.RaffleDrawByName(raffleDrawName) ;
             if (raffleDraw != null)
-                throw new InvalidOperationException("RaffleDraw already exists");
+                throw new RaffleDrawAlreadyExistsException(raffleDrawName);
 
             raffleDraw = new RaffleDraw
             {
-                Name = name,
+                Name = raffleDrawName,
                 IsClosed = false
             };
             await _database.AddRaffleDraw(raffleDraw);
@@ -41,10 +42,14 @@ namespace Raffle.Api.Services
         {
             var raffleDraw = await _database.RaffleDrawByName(raffleDrawName);
             if (raffleDraw == null)
-                throw new KeyNotFoundException("RaffleDraw not found");
+                throw new RaffleNotFoundException(raffleDrawName);
 
             if (raffleDraw.IsClosed)
-                throw new InvalidOperationException("RaffleDraw is closed");
+                throw new RaffleClosedException(raffleDrawName);
+
+            var emailExistsInRaffleDraw = await _database.RaffleMemberExists(raffleDraw.Id, memberEmail);
+            if (emailExistsInRaffleDraw)
+                throw new DuplicateRaffleMemberException(memberEmail);
 
             var member = new RaffleMember
             {
@@ -60,13 +65,13 @@ namespace Raffle.Api.Services
         {
             var raffleDraw = await _database.RaffleDrawByName(raffleDrawName);
             if (raffleDraw == null)
-                throw new KeyNotFoundException("RaffleDraw not found");
+                throw new RaffleNotFoundException(raffleDrawName);
 
             if (raffleDraw.IsClosed)
-                throw new InvalidOperationException("RaffleDraw is closed");
+                throw new RaffleClosedException(raffleDrawName);
 
             if (!raffleDraw.RaffleMembers.Any())
-                throw new InvalidOperationException("RaffleDraw does not have any members");
+                throw new NoRaffleMembersException(raffleDrawName);
 
             var winner = PickWinner(raffleDraw.RaffleMembers.ToList());
             await _database.CloseRaffleDraw(raffleDraw, winner.Id);
@@ -78,7 +83,7 @@ namespace Raffle.Api.Services
         {
             var closedRaffleDraws = await _database.ClosedRaffleDraws();
             if (closedRaffleDraws == null || closedRaffleDraws.Count() == 0)
-                throw new InvalidOperationException("No RaffleDraw has been closed");
+                throw new NoClosedRaffleDrawsException();
 
             return closedRaffleDraws;
         }
@@ -87,10 +92,22 @@ namespace Raffle.Api.Services
         {
             var raffleDraw = await _database.RaffleDrawByName(raffleDrawName);
             if (raffleDraw == null)
-                throw new KeyNotFoundException("RaffleDraw not found");
+                throw new RaffleNotFoundException(raffleDrawName);
 
             if (raffleDraw.IsClosed)
-                throw new InvalidOperationException("RaffleDraw is closed");
+                throw new RaffleClosedException(raffleDrawName);
+
+            var checkedEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var member in raffleMembersDto)
+            {
+                if (!checkedEmails.Add(member.Email))
+                    throw new DuplicateRaffleMemberException(member.Email);
+
+                var existsInRaffleDraw = await _database.RaffleMemberExists(raffleDraw.Id, member.Email);
+                if (existsInRaffleDraw)
+                    throw new DuplicateRaffleMemberException(member.Email);
+            }
 
             var raffleMembers = raffleMembersDto.Select(r => new RaffleMember
             {
@@ -106,7 +123,7 @@ namespace Raffle.Api.Services
         private RaffleMember PickWinner(List<RaffleMember> members)
         {
             if (members == null || members.Count == 0)
-                throw new KeyNotFoundException("Non members were found");
+                throw new NoMembersProvidedException();
 
             using var rng = RandomNumberGenerator.Create();
             byte[] bytes = new byte[4];

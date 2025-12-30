@@ -7,6 +7,7 @@ namespace Raffle.Api.Services
 {
     public interface IDatabaseService
     {
+        Task<bool> RaffleMemberExists(Guid raffleDrawId, string email);
         Task<List<WinnerDto>> ClosedRaffleDraws();
         Task CloseRaffleDraw(RaffleDraw raffleDraw, Guid winnerId);
         Task AddRaffleDraw(RaffleDraw raffle);
@@ -70,6 +71,12 @@ namespace Raffle.Api.Services
         {
             await _database.Members.AddRangeAsync(raffleMembers);
             await _database.SaveChangesAsync();
+        }
+
+        public async Task<bool> RaffleMemberExists(Guid raffleDrawId, string email)
+        {
+            return await _database.Members
+                .AnyAsync(m => m.RaffleDrawId == raffleDrawId && m.Email == email);
         }
     }
 }

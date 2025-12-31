@@ -18,16 +18,23 @@ builder.Services.AddValidatorsFromAssembly(typeof(CreateRaffleDrawRequestValidat
 builder.Services.AddScoped<IDatabaseService, DatabaseService>();
 builder.Services.AddScoped<IRaffleService, RaffleService>();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
 builder.Services.AddDbContext<RaffleDbContext>(options =>
     options.UseSqlite("Data Source=raffle.db"));
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Raffle API V1");
+        c.RoutePrefix = "";
+    });
 }
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
